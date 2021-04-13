@@ -1,5 +1,11 @@
 # particle_filter_localization_project
  
- Team members: Arjun Voruganti, Oscar Michel
- 
+## Implementation plan
+
+Team members: Arjun Voruganti, Oscar Michel
+
+
+## Writeup
+
+todo later
  
