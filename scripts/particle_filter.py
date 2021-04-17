@@ -17,6 +17,7 @@ from numpy.random import random_sample
 import math
 
 from random import randint, random
+from likelihood_field import LikelihoodField
 
 
 
@@ -117,16 +118,28 @@ class ParticleFilter:
 
 
     def get_map(self, data):
-
         self.map = data
-    
 
     def initialize_particle_cloud(self):
-        
-        # TODO
+        map_data = np.array(list(self.map.data))
+        valid_points = np.where(map_data == 0)[0]
+        pc = np.random.choice(valid_points, self.num_particles, False)
 
+        for i in pc:
+            pose = Pose()
+            pose.position.x = i % self.map.info.width
+            pose.position.y = i // self.map.info.height
+            pose.position.z = 0
+            theta = np.random.rand() * 2*math.pi
+            x,y,z,w = quaternion_from_euler(0, 0, theta)
+            pose.orientation = Quaternion(x,y,z,w)
+            self.particle_cloud.append(Particle(pose, 1 / self.num_particles))
+
+        print([(x.pose,x.w) for x in self.particle_cloud[:10]])
 
         self.normalize_particles()
+
+        
 
         self.publish_particle_cloud()
 
@@ -134,7 +147,13 @@ class ParticleFilter:
     def normalize_particles(self):
         # make all the particle weights sum to 1.0
         
-        # TODO
+  
+        w_sum = sum(x.w for x in self.particle_cloud)
+        for x in self.particle_cloud:
+            x.w /= w_sum
+
+        assert sum(abs(x.w for x in self.particle_cloud - 1.0) < 0.000001)
+
 
 
 
@@ -164,7 +183,7 @@ class ParticleFilter:
     def resample_particles(self):
 
         # TODO
-
+        pass
 
 
     def robot_scan_received(self, data):
@@ -243,12 +262,26 @@ class ParticleFilter:
         # based on the particles within the particle cloud, update the robot pose estimate
         
         # TODO
+        pass
 
 
     
     def update_particle_weights_with_measurement_model(self, data):
 
-        # TODO
+        K = len(data.ranges) #360
+        for p in self.particle_cloud:
+            x = p.pose.position.x'
+            y = p.pose.position.y
+            for k in range(K):
+
+                theta = get_yaw_from_pose(p.pose)
+                theta_k = (2.0 * np.pi /K)*k
+
+                x_k = x + p.data.ranges[k]*np.cos(theta + theta_k)
+                y_k = y + p.data.ranges[k]*np.sin(theta + theta_k)
+
+                dist = 
+
 
 
         
@@ -258,7 +291,26 @@ class ParticleFilter:
         # based on the how the robot has moved (calculated from its odometry), we'll  move
         # all of the particles correspondingly
 
-        # TODO
+        
+        curr_x = self.odom_pose.pose.position.x
+        old_x = self.odom_pose_last_motion_update.pose.position.x
+        curr_y = self.odom_pose.pose.position.y
+        old_y = self.odom_pose_last_motion_update.pose.position.y
+        curr_yaw = get_yaw_from_pose(self.odom_pose.pose)
+        old_yaw = get_yaw_from_pose(self.odom_pose_last_motion_update.pose)
+
+        dx = curr_x - old_x
+        dy = curr_y - old_y
+        d_yaw = curr_yaw - old_yaw
+
+        for p in self.particle_cloud:
+            p.pose.position.x += dx
+            p.pose.position.y += dy
+
+            p_yaw = get_yaw_from_pose(p.pose)
+            p_yaw += d_yaw
+            x,y,z,w = quaternion_from_euler(0,0,p_yaw)
+            p.pose.quaternion = Quaternion(x,y,z,w)
 
 
 
