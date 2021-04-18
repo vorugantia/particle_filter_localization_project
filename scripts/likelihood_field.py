@@ -7,7 +7,6 @@ from nav_msgs.srv import GetMap
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
-
 class LikelihoodField(object):
     """ Stores an likelihood field for an input map.  An likelihood field returns
         the distance to the closest obstacle for any coordinate in the map

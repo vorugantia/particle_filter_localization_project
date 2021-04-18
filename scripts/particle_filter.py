@@ -20,6 +20,13 @@ from random import randint, random
 from likelihood_field import LikelihoodField
 
 
+# Borrowed from class 6 starter code
+def compute_prob_zero_centered_gaussian(dist, sd):
+    """ Takes in distance from zero (dist) and standard deviation (sd) for gaussian
+        and returns probability (likelihood) of observation """
+    c = 1.0 / (sd * math.sqrt(2 * math.pi))
+    prob = c * math.exp((-math.pow(dist,2))/(2 * math.pow(sd, 2)))
+    return prob
 
 def get_yaw_from_pose(p):
     """ A helper function that takes in a Pose object (geometry_msgs) and returns yaw"""
@@ -33,13 +40,12 @@ def get_yaw_from_pose(p):
 
     return yaw
 
-
-def draw_random_sample():
-    """ Draws a random sample of n elements from a given list of choices and their specified probabilities.
-    We recommend that you fill in this function using random_sample.
-    """
-    # TODO
-    return
+# NOTE: unused, see resample_particles()
+# def draw_random_sample(particles):
+#     """ Draws a random sample of n elements from a given list of choices and their specified probabilities.
+#     We recommend that you fill in this function using random_sample.
+#     """
+#     return
 
 
 class Particle:
@@ -90,6 +96,9 @@ class ParticleFilter:
 
         self.odom_pose_last_motion_update = None
 
+        # Initialize likelihood field
+        self.likelihood_field = LikelihoodField()
+
 
         # Setup publishers and subscribers
 
@@ -135,8 +144,6 @@ class ParticleFilter:
             pose.orientation = Quaternion(x,y,z,w)
             self.particle_cloud.append(Particle(pose, 1 / self.num_particles))
 
-        print([(x.pose,x.w) for x in self.particle_cloud[:10]])
-
         self.normalize_particles()
 
         
@@ -152,7 +159,7 @@ class ParticleFilter:
         for x in self.particle_cloud:
             x.w /= w_sum
 
-        assert sum(abs(x.w for x in self.particle_cloud - 1.0) < 0.000001)
+        assert abs(sum(x.w for x in self.particle_cloud) - 1.0) < 0.000001
 
 
 
@@ -181,9 +188,17 @@ class ParticleFilter:
 
 
     def resample_particles(self):
+        weights = []
+        for p in self.particle_cloud:
+            weights.append(p.w)
 
-        # TODO
-        pass
+        sample = np.random.choice(list(range(self.num_particles)), self.num_particles, replace=True, p=weights)
+        new_particle_cloud = []
+        for idx in sample:
+            new_particle_cloud.append(self.particle_cloud[idx].deepcopy())
+            # TODO: add noise
+
+        self.particle_cloud = new_particle_cloud
 
 
     def robot_scan_received(self, data):
@@ -261,29 +276,44 @@ class ParticleFilter:
     def update_estimated_robot_pose(self):
         # based on the particles within the particle cloud, update the robot pose estimate
         
-        # TODO
-        pass
+        # position
+        p_xs = [p.pose.position.x for p in self.particle_cloud]
+        p_ys = [p.pose.position.y for p in self.particle_cloud]
 
+        self.robot_estimate.position.x = np.mean(p_xs)
+        self.robot_estimate.position.y = np.mean(p_ys)
+        self.robot_estimate.position.z = 0
 
+        # orientation
+        o_x_mean = np.mean([p.pose.orientation.x for p in self.particle_cloud])
+        o_y_mean = np.mean([p.pose.orientation.y for p in self.particle_cloud])
+        o_z_mean = np.mean([p.pose.orientation.z for p in self.particle_cloud])
+        o_w_mean = np.mean([p.pose.orientation.w for p in self.particle_cloud])
+        
+        self.robot_estimate.orientation = Quaternion(o_x_mean, o_y_mean, o_z_mean, o_w_mean)
+        
     
     def update_particle_weights_with_measurement_model(self, data):
 
         K = len(data.ranges) #360
         for p in self.particle_cloud:
-            x = p.pose.position.x'
+            x = p.pose.position.x
             y = p.pose.position.y
+            q = 1
             for k in range(K):
 
                 theta = get_yaw_from_pose(p.pose)
                 theta_k = (2.0 * np.pi /K)*k
 
-                x_k = x + p.data.ranges[k]*np.cos(theta + theta_k)
-                y_k = y + p.data.ranges[k]*np.sin(theta + theta_k)
+                x_k = x + min(data.ranges[k], 3) * np.cos(theta + theta_k)
+                y_k = y + min(data.ranges[k], 3) * np.sin(theta + theta_k)
 
-                dist = 
+                dist = self.likelihood_field.get_closest_obstacle_distance(x_k, y_k)
 
+                z_hit, z_rand, z_max = (0.33,0.33,0.34)
+                q *= z_hit*compute_prob_zero_centered_gaussian(dist, 1) + z_rand/z_max #TODO: sd=1?
 
-
+            p.w = q
         
 
     def update_particles_with_motion_model(self):
@@ -310,7 +340,7 @@ class ParticleFilter:
             p_yaw = get_yaw_from_pose(p.pose)
             p_yaw += d_yaw
             x,y,z,w = quaternion_from_euler(0,0,p_yaw)
-            p.pose.quaternion = Quaternion(x,y,z,w)
+            p.pose.orientation = Quaternion(x,y,z,w)
 
 
 
