@@ -84,7 +84,7 @@ class ParticleFilter:
         self.map = OccupancyGrid()
 
         # the number of particles used in the particle filter
-        self.num_particles = 1000 #TODO: 10000
+        self.num_particles = 5000
 
         # initialize the particle cloud array
         self.particle_cloud = []
@@ -197,22 +197,12 @@ class ParticleFilter:
         for idx in sample:
             new_p = copy.deepcopy(self.particle_cloud[idx])
             # Add random vector to particle's pose - this creates noise.
-            #TODO: play around with these SD values?
-            new_p.pose.position.x += np.random.normal(0,1)
-            new_p.pose.position.y += np.random.normal(0,1)
-
-            new_p_yaw = get_yaw_from_pose(new_p.pose) + np.random.normal(0,math.pi/12)
-            x,y,z,w = quaternion_from_euler(0,0,new_p_yaw)
-            new_p.pose.orientation = Quaternion(x,y,z,w)
+            new_p.pose.position.x += np.random.normal(0,0.25)
+            new_p.pose.position.y += np.random.normal(0,0.25)
             
             new_particle_cloud.append(new_p)
 
         self.particle_cloud = new_particle_cloud
-        
-        #TODO: remove
-        # for p in self.particle_cloud:
-        #     print("particle: ", p.pose.position.x, p.pose.position.y, get_yaw_from_pose(p.pose), "weight: ", p.w)
-
 
     def robot_scan_received(self, data):
 
@@ -313,9 +303,10 @@ class ParticleFilter:
             x = p.pose.position.x
             y = p.pose.position.y
             q = 1
-            for k in range(K):
 
-                # Catch cases where sensor doesn't detect object in range which returns "nan" weight
+            for k in range(0, K, 45):
+
+                # C atch cases where sensor doesn't detect object in range which returns "nan" weight
                 if data.ranges[k] < data.range_max:
                     theta = get_yaw_from_pose(p.pose)
                     theta_k = (2.0 * np.pi /K)*k
@@ -326,8 +317,7 @@ class ParticleFilter:
                     # Will return "nan" if (x_k, y_k) is out of bounds. Handle this case below.
                     dist = self.likelihood_field.get_closest_obstacle_distance(x_k, y_k)
                     
-                    z_hit, z_rand, z_max = (0.33,0.33,0.34)
-                    q *= z_hit*compute_prob_zero_centered_gaussian(dist, 1) + z_rand/z_max #TODO: sd=1?
+                    q *= compute_prob_zero_centered_gaussian(dist, 0.25)
 
             if math.isnan(q):
                 p.w = 0
