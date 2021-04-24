@@ -42,13 +42,6 @@ def get_yaw_from_pose(p):
 
     return yaw
 
-# NOTE: unused, see resample_particles()
-# def draw_random_sample(particles):
-#     """ Draws a random sample of n elements from a given list of choices and their specified probabilities.
-#     We recommend that you fill in this function using random_sample.
-#     """
-#     return
-
 
 class Particle:
 
@@ -98,9 +91,8 @@ class ParticleFilter:
 
         self.odom_pose_last_motion_update = None
 
-        # Initialize likelihood field
+        # Initialize likelihood field (code borrowed from in-class assignment)
         self.likelihood_field = LikelihoodField()
-
 
         # Setup publishers and subscribers
 
@@ -132,14 +124,20 @@ class ParticleFilter:
         self.map = data
 
     def initialize_particle_cloud(self):
+        # Get map origin coordiates and map resolution data
         map_data = np.array(list(self.map.data))
         resolution = self.map.info.resolution
         x_origin = self.map.info.origin.position.x
         y_origin = self.map.info.origin.position.y
         
+        # Get list of valid point coordinates for the particle cloud (points inside of the room)
         valid_points = np.where(map_data == 0)[0]
+        
+        # Particle cloud is a random selection over valid point coordinates
         pc = np.random.choice(valid_points, self.num_particles, False)
 
+        # For each coordinate in particle cloud, convert to 2D coordinates
+        # and sample a random angle for orientation.
         for i in pc:
             pose = Pose()
             pose.position.x = (i % self.map.info.width) * resolution + x_origin
@@ -148,6 +146,7 @@ class ParticleFilter:
             theta = np.random.rand() * 2*math.pi
             x,y,z,w = quaternion_from_euler(0, 0, theta)
             pose.orientation = Quaternion(x,y,z,w)
+            # Initialize to uniform weight
             weight = 1 / self.num_particles
             self.particle_cloud.append(Particle(pose, weight))
 
@@ -160,10 +159,6 @@ class ParticleFilter:
         w_sum = sum(x.w for x in self.particle_cloud)
         for x in self.particle_cloud:
             x.w /= w_sum
-
-        # assert abs(sum(x.w for x in self.particle_cloud) - 1.0) < 0.000001
-
-
 
 
     def publish_particle_cloud(self):
@@ -190,19 +185,22 @@ class ParticleFilter:
 
 
     def resample_particles(self):
+        # Sample particles in current particle cloud with probability equal to the particle weights
         weights = [p.w for p in self.particle_cloud]
         sample = np.random.choice(list(range(self.num_particles)), self.num_particles, replace=True, p=weights)
 
+        # Create new particle cloud based off of samples + some noise vector.
         new_particle_cloud = []
         for idx in sample:
             new_p = copy.deepcopy(self.particle_cloud[idx])
-            # Add random vector to particle's pose - this creates noise.
+            # Add random vector to each particle's pose - this creates noise.
             new_p.pose.position.x += np.random.normal(0,0.25)
             new_p.pose.position.y += np.random.normal(0,0.25)
             
             new_particle_cloud.append(new_p)
 
         self.particle_cloud = new_particle_cloud
+
 
     def robot_scan_received(self, data):
 
@@ -279,7 +277,7 @@ class ParticleFilter:
     def update_estimated_robot_pose(self):
         # based on the particles within the particle cloud, update the robot pose estimate
         
-        # position
+        # Take the mean of position data
         p_xs = [p.pose.position.x for p in self.particle_cloud]
         p_ys = [p.pose.position.y for p in self.particle_cloud]
 
@@ -287,7 +285,7 @@ class ParticleFilter:
         self.robot_estimate.position.y = np.mean(p_ys)
         self.robot_estimate.position.z = 0
 
-        # orientation
+        # Take the mean of orientation data
         o_x_mean = np.mean([p.pose.orientation.x for p in self.particle_cloud])
         o_y_mean = np.mean([p.pose.orientation.y for p in self.particle_cloud])
         o_z_mean = np.mean([p.pose.orientation.z for p in self.particle_cloud])
@@ -297,16 +295,15 @@ class ParticleFilter:
         
     
     def update_particle_weights_with_measurement_model(self, data):
-
-        K = len(data.ranges) #360
+        K = len(data.ranges) # array of 360
         for p in self.particle_cloud:
             x = p.pose.position.x
             y = p.pose.position.y
             q = 1
 
+            # Only measure senor data from 8 directions, 45 degrees apart (to speed up runtime)
             for k in range(0, K, 45):
-
-                # C atch cases where sensor doesn't detect object in range which returns "nan" weight
+                # Catch cases where sensor doesn't detect object in range (when "nan" weight returned)
                 if data.ranges[k] < data.range_max:
                     theta = get_yaw_from_pose(p.pose)
                     theta_k = (2.0 * np.pi /K)*k
@@ -319,6 +316,7 @@ class ParticleFilter:
                     
                     q *= compute_prob_zero_centered_gaussian(dist, 0.25)
 
+            # Case if "dist" returned "nan"
             if math.isnan(q):
                 p.w = 0
             else:
@@ -326,11 +324,8 @@ class ParticleFilter:
         
 
     def update_particles_with_motion_model(self):
-
-        # based on the how the robot has moved (calculated from its odometry), we'll  move
+        # based on the how the robot has moved (calculated from its odometry), we'll move
         # all of the particles correspondingly
-
-        
         curr_x = self.odom_pose.pose.position.x
         old_x = self.odom_pose_last_motion_update.pose.position.x
         curr_y = self.odom_pose.pose.position.y
@@ -338,10 +333,12 @@ class ParticleFilter:
         curr_yaw = get_yaw_from_pose(self.odom_pose.pose)
         old_yaw = get_yaw_from_pose(self.odom_pose_last_motion_update.pose)
 
+        # Calculate differences between the new pose components and old pose components
         dx = curr_x - old_x
         dy = curr_y - old_y
         d_yaw = curr_yaw - old_yaw
 
+        # Add difference in pose components to each particle's pose in particle cloud.
         for p in self.particle_cloud:
             p.pose.position.x += dx
             p.pose.position.y += dy
