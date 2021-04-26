@@ -23,6 +23,10 @@ Team members: Arjun Voruganti, Oscar Michel
 
 We plan to get as much done as possible this weekend. By Sunday 4/18, we want to attempt each step and come up with a complete implementation. We are expecting bugs. Then we will spend the next week fixing these bugs that come up. We will also use this next week to find a way to get the robot out of the house.
 
+![gif](https://github.com/vorugantia/particle_filter_localization_project/blob/main/Screen%20Recording%202021-04-25%20at%208.30.13%20PM.gif)
+
+(Sorry, the gif filesize is big and so might run slow. I couldn't figure out how to optimize it any better)
+
 
 ## Writeup
 
@@ -48,7 +52,7 @@ This is done in the `update_particles_with_motion_model` method located on line 
 
 #### Measurement model
 
-We do this in `update_particle_weights_with_measurement_mode` on 297. We iterate through the particle cloud and apply the likelihood field method. For computational efficiency, we only sample eight directions of the robot's sensor measurement. For each of these directions, we compute hypothetical `x_k` and `y_k` coordinates according to the formula given in the lecture. The only difference is that our method clips the measured distance to 3 m to avoid infinities in the LIDAR measurements. We use `get_closest_obstacle_distance` to compute the final weighting. We found that a standard deviation of 0.25 works well in the Gaussian distribution used to get likelihood. 
+We do this in `update_particle_weights_with_measurement_model` on 297. We iterate through the particle cloud and apply the likelihood field method. For computational efficiency, we only sample eight directions of the robot's sensor measurement. For each of these directions, we compute hypothetical `x_k` and `y_k` coordinates according to the formula given in the lecture. The only difference is that our method clips the measured distance to 3 m to avoid infinities in the LIDAR measurements. We use `get_closest_obstacle_distance` to compute the final weighting. We found that a standard deviation of 0.25 works well in the Gaussian distribution used to get likelihood. 
 
 #### Resampling/Incorporation of noise
 
@@ -57,5 +61,18 @@ This is done in the `resample_particles` method. We use `np.random.choice` to sa
 #### Optimization of parameters
 
 The parameters that we optimized where the number of particles and the standard deviation for the Gaussians used to add noise and to get particle likelihoods. Following the suggestion of Yves, we do not include `z_max` and `z_random` in our weight model. We experimented with each of these standard deviations by hand and found which ones worked well. The standard deviation for adding noise will affect the width of the point cloud, so if few particles are used it is better to have a large such standard deviaiton. The standard deviation used for likelihood will affect the speed of point cloud convergene, since it controls how much particle measurements are penalized for deviating from the robot's measurements.
+
+### Challenges 
+
+One of the main challenges we ran into was when we got "nan" values returned from `update_particle_weights_with_measurement_model` upon resampling our particle cloud. We ended up finding two reasons why we were getting nan values: Firstly, when walls were more than ~3m away from the robot's LiDAR, it returns a distance value of "inf" which we then pass to compute the particle likelihood field. However using inf in this calculation results in a nan value being returned. Secondly, when we call `get_nearest_obstacle()` in `likelihood_field.py` for a particle with a position that has now moved outside of the map bounds, that function returns nan. So we had to figure out how to handle these two cases when nan was returned so that rospy would stop giving us errors. Another challenge we had with `update_particle_weights_with_measurement_model`was optimizing runtime for our for loop. Before, we looped over all 360 robot sensor directions, for each particle in the particle cloud. As our particle cloud is 5000 particles, this equals 360 * 5000 iterations. The issue here is that rospy was receiving new messages from the LiDAR sensor faster than our function was able to run. To solve this, we considered only 8 cardinal directions, each 45 degrees apart. This reduced our number of iterations to 8 * 5000 which is more manageable.
+
+### Future work
+
+To improve our particle localization algorithm in the future, we would try to further fine-tune certain parameters (such as noise standard deviations) in order to give us a "tighter" particle cloud like in the GIFs that were shown on the project assignment page. Although our particle cloud right now is perfectly accurate in that it is centered around the robot's location, it could still be made smaller and more precise. It might also help us speed up our particle localization convergence to a single point. We're not sure at the moment what else we could do to improve our particle localization algorithm - we believe that our implementation does a decent job.
+
+### Takeaways
+
+* The speed of our particle localization convergence and the size of our particle cloud can be controlled by tweaking our standard deviation parameters upon random samplings. We found simple trial-and-error, as well as applying some common sense/intuition, to be the best approach to tweak our standard deviation parameters.
+* Pair coding works suprisingly well in a remote environment. In fact, it enables both individuals to look at the same screen at the same time instead of having screens of their own and less coordination.
 
 
